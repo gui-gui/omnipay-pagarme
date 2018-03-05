@@ -206,17 +206,16 @@ class AuthorizeRequest extends AbstractRequest
         $data['installments'] = $this->getInstallments();
         $data['soft_descriptor'] = $this->getSoftDescriptor();
         $data['metadata'] = $this->getMetadata();
+        if (!$this->getCard() && $this->getCustomer()) {
+            $this->setCard($this->getCustomer());
+        }
+        $data['customer'] = $this->getCustomerData();
         if ( $this->getPaymentMethod() && ($this->getPaymentMethod() == 'boleto') ) {
             if ( $this->getBoletoExpirationDate() ) {
                 $data['boleto_expiration_date'] = $this->getBoletoExpirationDate();
             }
             $data['payment_method'] = $this->getPaymentMethod();
-            if ( $this->getCard() ) {
-                $data = array_merge($data, $this->getCustomerData());
-            } elseif ($this->getCustomer()) {
-                $this->setCard($this->getCustomer());
-                $data = array_merge($data, $this->getCustomerData());
-            }
+            // TODO : allow for boleto_instructions
         } else {
             if ( $this->getCard() ) {
                 $data = array_merge($data, $this->getCardData(), $this->getCustomerData());
@@ -227,6 +226,9 @@ class AuthorizeRequest extends AbstractRequest
             } else {
                 $this->validate('card');
             }
+            $data['items'] = $this->getItemsData();
+            $data['billing'] = $this->getBillingData();
+            $data['shipping'] = $this->getShippingData();
         }
         $data['capture'] = 'false';
         

@@ -1,6 +1,6 @@
 {
-    "name": "descubraomundo/omnipay-pagarme",
-    "description": "Pagarme driver for the Omnipay payment processing library",
+    "name": "infinauta/omnipay-pagarme",
+    "description": "Pagarme driver for the Omnipay payment processing library v2017-08-28",
     "keywords": [
         "gateway",
         "merchant",
@@ -9,10 +9,11 @@
         "payment",
         "pagarme"
     ],
-    "homepage": "https://github.com/descubraomundo/omnipay-pagarme",
+    "homepage": "https://github.com/gui-gui/omnipay-pagarme",
     "require": {
         "php": ">=5.3.0",
-        "omnipay/common": "~2.0"
+        "omnipay/common": "~2.0",
+        "giggsey/libphonenumber-for-php": "^8.0@dev"
     },
     "require-dev": {
         "omnipay/tests": "~2.0",
@@ -23,6 +24,9 @@
         {
             "name": "Descubra o Mundo",
             "email": "geeks@descubraomundo.com"
+        },
+        {
+            "name": "Infinauta"
         }
     ],
     "autoload": {

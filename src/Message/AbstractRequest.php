@@ -151,6 +151,26 @@ abstract class AbstractRequest extends BaseAbstractRequest
     }
 
     /**
+     * Get Items
+     *
+     * @return array items
+     */
+    public function getItems()
+    {
+        return $this->getParameter('items');
+    }
+
+    /**
+     *
+     * @param array $value
+     * @return AbstractRequest provides a fluent interface.
+     */
+    public function setItems($value)
+    {
+        return $this->setParameter('items', $value);
+    }
+
+    /**
      * Insert the API key into de array.
      *
      * @param array $data
@@ -239,12 +259,12 @@ abstract class AbstractRequest extends BaseAbstractRequest
 
         $card->validate();
         $data['object'] = 'card';
+        $data['card_holder_name'] = $card->getName();
         $data['card_number'] = $card->getNumber();
         $data['card_expiration_date'] = sprintf('%02d',$card->getExpiryMonth()).(string)$card->getExpiryYear();
         if ( $card->getCvv() ) {
             $data['card_cvv'] = $card->getCvv();
         }
-        $data['card_holder_name'] = $card->getName();
 
         return $data;
     }
@@ -261,62 +281,76 @@ abstract class AbstractRequest extends BaseAbstractRequest
     protected function getCustomerData()
     {
         $card = $this->getCard();
-        $data = array();
-
+        $data = new stdClass();
+        
         $data['customer']['name'] = $card->getName();
         $data['customer']['email'] = $card->getEmail();
-        $data['customer']['sex'] = $card->getGender();
-        $data['customer']['born_at'] = $card->getBirthday('m-d-Y');
-        $data['customer']['document_number'] = $card->getHolderDocumentNumber();
-
-        $arrayAddress = $this->extractAddress($card->getAddress1());
-        if ( ! empty($arrayAddress['street']) ) {
-            $data['customer']['address'] = $arrayAddress;
-            $data['customer']['address']['zipcode'] = $card->getPostcode();
-            if ( $card->getAddress2() ) {
-                $data['customer']['address']['neighborhood'] = $card->getAddress2();
-            }
-
-            $data['customer']['address']['city']    = $card->getCity();
-            $data['customer']['address']['state']   = $card->getState();
-            $data['customer']['address']['country'] = $card->getCountry();
-        }
-
-        $arrayPhone = $this->extractDddPhone($card->getPhone());
-        if ( ! empty($arrayPhone['ddd']) ) {
-            $data['customer']['phone'] = $arrayPhone;
-        }
+        $data['customer']['external_id'] = $this->getUserId() ? $this->getUserId() : $card->getEmail();
+        $data['customer']['type'] = $this->extractCustomerType($card->getHolderDocumentNumber());
+        $data['customer']['country'] = $card->getCountry();
+        $data['customer']['phone_numbers'] = $this->extractPhones(array($card->getPhone(), $card->getCountry()));
+        $data['customer']['documents'] = $this->extractDocuments(array($card->getHolderDocumentNumber()));
+        // TODO: Birthday ['customer']['birthday'] 
+        // TODO: allow referencing saved customer.id
 
         return $data;
     }
 
-    /**
-     * Separate DDD from phone numbers in an array
-     * containing two keys:
-     *
-     * * ddd
-     * * number
-     *
-     * @param string $phoneNumber phone number with DDD (byref)
-     * @return array the Phone number and the DDD with two digits
-     */
-    protected function extractDddPhone($phoneNumber)
+    // TODO: METHOD DOCS
+    protected function getBillingData()
     {
-        $arrayPhone = array();
-        $phone = preg_replace("/[^0-9]/", "", $phoneNumber);
-        if(substr( $phone, 0, 1 ) === "0"){
-            $arrayPhone['ddd'] = substr($phone, 1, 2);
-            $arrayPhone['number'] = substr($phone, 3);
-        } elseif (strlen($phone) < 10 ) {
-            $arrayPhone['ddd'] = '';
-            $arrayPhone['number'] = $phone;
-        } else {
-            $arrayPhone['ddd'] = substr($phone, 0, 2);
-            $arrayPhone['number'] = substr($phone, 2);
-        }
+        $card = $this->getCard();
+        $data = new stdClass();
+        $address = $this->extractAddress($card->getBillingAddress1());  
 
-        return $arrayPhone;
+        $data['name'] = "${$card->getBillingFirstName()} ${$card->getBillingLastName()}";
+        $data['address']['country'] = $card->getBillingCountry();
+        $data['address']['state'] = $card->getBillingState();
+        $data['address']['city'] = $card->getBillingCity();
+        $data['address']['street'] = $address[0];
+        $data['address']['street_number'] = $address[1];
+        $data['address']['complementary'] = $card->getBillingAddress2();
+        $data['address']['zipcode'] = $card->getBillingPostcode();
+        // TODO: neighbourhood ['address']['neighbourhood'];
     }
+
+    // TODO: METHOD DOCS
+    protected function getShippingData()
+    {
+        $card = $this->getCard();
+        $data = new stdClass();
+        $address = $this->extractAddress($card->getShippingAddress1());
+        
+        $data['name'] = "${$card->getShippingFirstName()} ${$card->getShippingLastName()}";
+        $data['address']['country'] = $card->getShippingCountry();
+        $data['address']['state'] = $card->getShippingState();
+        $data['address']['city'] = $card->getShippingCity();
+        $data['address']['street'] = $address[0];
+        $data['address']['street_number'] = $address[1];
+        $data['address']['complementary'] = $card->getShippingAddress2();
+        $data['address']['zipcode'] = $card->getShippingPostcode();
+        // TODO: Allow for:
+        //   "fee" ['fee'] = 1000 (in cents)
+        //   "delivery_date" ['delivery_date'] = date(YYYY-MM-DD)
+        //   "expedited" ['expedited'] = bool
+        //   "neighbourhood" ['address']['neighbourhood'];
+    }
+
+    // TODO: METHOD DOCS
+    protected function getItemsData()
+    {
+        return $this->getItems();
+        // returns an array of [{ id, title, unit_price, quantity e tangible }]
+        // {
+        //     "id": "r123",
+        //     "title": "Red pill",
+        //     "unit_price": 10000,
+        //     "quantity": 1,
+        //     "tangible": true
+        //   },
+    }
+
+
 
     /**
      * Separate data from the credit card Address in an
@@ -334,12 +368,82 @@ abstract class AbstractRequest extends BaseAbstractRequest
      */
     protected function extractAddress($address)
     {
-        $result = array();
         $explode = array_map('trim', explode(',', $address));
 
         $result['street'] = $explode[0];
         $result['street_number'] = isset($explode[1]) ? $explode[1] : '';
-        $result['complementary'] = isset($explode[2]) ? $explode[2] : '';
+
+        return $result;
+    }
+
+    /**
+     * Generate an array with the document object with keys
+     * * type
+     * * number
+     *
+     *
+     * @param array of $document_numbers
+     * @return array of documents
+     */
+    protected function extractDocuments($document_numbers)
+    {
+        $result = array();
+
+        foreach ($document_numbers as $number) 
+        {
+            $document = new stdClass();
+            $document->number = $number;
+            $document->type = $this->extractDocumentType($number);
+            array_push($result, $document);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return wether is Individual or Corporation
+     *
+     * @param string $document_number
+     * @return string 'individual' | 'corporation'
+     */
+    protected function extractCustomerType($document_number) 
+    {
+        return strlen($document_number) == 11 ? 'individual' : 'corporation';
+    }
+
+    /**
+     * Return wether is CPF or CNPJ
+     *
+     * @param string $document_number
+     * @return string 'cpf' | 'cnpj'
+     */
+    protected function extractDocumentType($document_number) 
+    {
+        return strlen($document_number) == 11 ? 'cpf' : 'cnpj';
+    }
+
+    /**
+     * Generate an array with the phone numbers formatted in E.164 format
+     *
+     * @param array $phone_numbers
+     * @return array containing E.164 format numbers
+     */
+    protected function extractPhones($phone_numbers, $country)
+    {
+        $result = array();
+        $phoneUtil = \libphonenumber\PhoneNumberUtil::getInstance();
+
+        foreach($phone_numbers as $number)
+        {   
+            try {
+                $number_proto = $phoneUtil->parse($number, $country);
+                array_push($result, $phoneUtil->format($number_proto, \libphonenumber\PhoneNumberFormat::E164));
+            }
+            catch (\libphonenumber\NumberParseException $e) {
+                // Let the phone number go as it is. Pagarme response will handle this error for now.
+                array_push($result, $number);
+            }
+        }
 
         return $result;
     }
