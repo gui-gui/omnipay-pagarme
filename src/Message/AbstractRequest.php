@@ -2,7 +2,10 @@
 
 namespace Omnipay\Pagarme\Message;
 
-use Omnipay\Pagarme\CreditCard;
+// use Omnipay\Pagarme\CreditCard;
+use Omnipay\Common\Message\ResponseInterface;
+use Omnipay\Common\Exception\InvalidResponseException;
+
 use Omnipay\Common\Message\AbstractRequest as BaseAbstractRequest;
 
 /**
@@ -18,29 +21,10 @@ abstract class AbstractRequest extends BaseAbstractRequest
      */
     protected $endpoint = 'https://api.pagar.me/1/';
 
-    /**
-     * Get the card.
-     *
-     * @return CreditCard
-     */
-    public function getCard()
+    
+    public function getAmountInCents($amount)
     {
-        return $this->getParameter('card');
-    }
-
-    /**
-     * Sets the card.
-     *
-     * @param CreditCard $value
-     * @return AbstractRequest Provides a fluent interface
-     */
-    public function setCard($value)
-    {
-        if ($value && !$value instanceof CreditCard) {
-            $value = new CreditCard($value);
-        }
-
-        return $this->setParameter('card', $value);
+        return (int) round($amount * 100);
     }
 
     /**
@@ -109,13 +93,13 @@ abstract class AbstractRequest extends BaseAbstractRequest
     }
 
     /**
-     * Get the card hash
+     * Get the card hash / token
      *
      * @return string card hash
      */
     public function getCardHash()
     {
-        return $this->getParameter('card_hash');
+        return $this->getToken();
     }
 
     /**
@@ -127,7 +111,30 @@ abstract class AbstractRequest extends BaseAbstractRequest
      */
     public function setCardHash($value)
     {
-        return $this->setParameter('card_hash', $value);
+        return $this->setToken($value);
+    }
+
+
+    /**
+     * Get the card hash
+     *
+     * @return string card hash
+     */
+    public function getHolderDocumentNumber()
+    {
+        return $this->getParameter('holderDocumentNumber');
+    }
+
+    /**
+     * Set the card hash
+     *
+     * Must be a card hash like the ones returned by Pagarme.js.
+     *
+     * @return AbstractRequest provides a fluent interface.
+     */
+    public function setHolderDocumentNumber($value)
+    {
+        return $this->setParameter('holderDocumentNumber', preg_replace('/\D/', '', $value));
     }
 
     /**
@@ -150,6 +157,27 @@ abstract class AbstractRequest extends BaseAbstractRequest
         return $this->setParameter('metadata', $value);
     }
 
+
+    /**
+     * Get PostbackUrl
+     *
+     * @return string Url
+     */
+    public function getPostbackUrl()
+    {
+        return $this->getParameter('postbackUrl');
+    }
+
+    /**
+     *
+     * @param array $value
+     * @return AbstractRequest provides a fluent interface.
+     */
+    public function setPostbackUrl($value)
+    {
+        return $this->setParameter('postbackUrl', $value);
+    }
+
     /**
      * Get Items
      *
@@ -168,6 +196,28 @@ abstract class AbstractRequest extends BaseAbstractRequest
     public function setItems($value)
     {
         return $this->setParameter('items', $value);
+    }
+
+
+    /**
+     * Get ShippingFee
+     *
+     * @return array shipping_fee
+     */
+    public function getShippingFee()
+    {
+        return $this->getParameter('shippingFee');
+    }
+
+
+    /**
+     *
+     * @param array $value
+     * @return AbstractRequest provides a fluent interface.
+     */
+    public function setShippingFee($value)
+    {
+        return $this->setParameter('shippingFee', $value);
     }
 
     /**
@@ -195,6 +245,16 @@ abstract class AbstractRequest extends BaseAbstractRequest
         return 'POST';
     }
 
+    protected function getEndpoint()
+    {
+        return $this->endpoint;
+    }
+
+    protected function createResponse($data)
+    {
+        return $this->response = new Response($this, $data);
+    }
+
     public function sendData($data)
     {
         // don't throw exceptions for 4xx errors
@@ -207,39 +267,43 @@ abstract class AbstractRequest extends BaseAbstractRequest
             }
         );
 
-        $httpRequest = $this->httpClient->createRequest(
-            $this->getHttpMethod(),
-            $this->getEndpoint(),
-            null,
-            $this->insertApiKeyToData($data),
-            $this->getOptions()
+        $headers = array(
+            'Accept' => 'application/json',
+            'Content-type' => 'application/json',
+            'timeout'         => 60,
         );
-        $httpResponse = $httpRequest->send();
 
-        return $this->response = new Response($this, $httpResponse->json());
-    }
+        // Guzzle HTTP Client createRequest does funny things when a GET request
+        // has attached data, so don't send the data if the method is GET.
+        if ($this->getHttpMethod() == 'GET') {
+            $httpRequest = $this->httpClient->createRequest(
+                $this->getHttpMethod(),
+                $this->getEndpoint() . '?' . http_build_query($this->insertApiKeyToData($data)),
+                $headers
+            );
+        } else {
+            $httpRequest = $this->httpClient->createRequest(
+                $this->getHttpMethod(),
+                $this->getEndpoint(),
+                $headers,
+                $this->toJSON($this->insertApiKeyToData($data))
+            );
+        }
 
-    /**
-     * Get Query Options.
-     *
-     * Must be over-ridden in sub classes that make GET requests
-     * with query parameters.
-     *
-     * @return array The query Options
-     */
-    protected function getOptions()
-    {
-        return array();
-    }
-
-    protected function getEndpoint()
-    {
-        return $this->endpoint;
-    }
-
-    protected function createResponse($data)
-    {
-        return $this->response = new Response($this, $data);
+        try {
+            // CURL_SSLVERSION_TLSv1_2 for libcurl < 7.35
+            $httpRequest->getCurlOptions()->set(CURLOPT_SSLVERSION, 6);
+            $httpResponse = $httpRequest->send();
+            // Empty response body should be parsed also as and empty array
+            $body = $httpResponse->getBody(true);
+            $jsonToArrayResponse = !empty($body) ? $httpResponse->json() : array();
+            return $this->response = $this->createResponse($jsonToArrayResponse, $httpResponse->getStatusCode());
+        } catch (\Exception $e) {
+            throw new InvalidResponseException(
+                'Error communicating with payment gateway: ' . $e->getMessage(),
+                $e->getCode()
+            );
+        }
     }
 
     /**
@@ -257,14 +321,19 @@ abstract class AbstractRequest extends BaseAbstractRequest
         $card = $this->getCard();
         $data = array();
 
-        $card->validate();
-        $data['object'] = 'card';
         $data['card_holder_name'] = $card->getName();
-        $data['card_number'] = $card->getNumber();
-        $data['card_expiration_date'] = sprintf('%02d',$card->getExpiryMonth()).(string)$card->getExpiryYear();
-        if ( $card->getCvv() ) {
-            $data['card_cvv'] = $card->getCvv();
-        }
+        if ( $this->getCardHash() ) {
+            $data['card_expiration_date'] = '1020';
+            $data['card_hash'] = $this->getCardHash();
+        } elseif( $this->getCardReference() ) {
+            $data['card_id'] = $this->getCardReference();
+        } else  {
+            $data['card_expiration_date'] = sprintf('%02d',$card->getExpiryMonth()).(string)$card->getExpiryYear();
+            $data['card_number'] = $card->getNumber();
+            if ( $card->getCvv() ) {
+                $data['card_cvv'] = $card->getCvv();
+            }
+        } 
 
         return $data;
     }
@@ -281,76 +350,78 @@ abstract class AbstractRequest extends BaseAbstractRequest
     protected function getCustomerData()
     {
         $card = $this->getCard();
-        $data = new stdClass();
+        $data = array();
         
-        $data['customer']['name'] = $card->getName();
-        $data['customer']['email'] = $card->getEmail();
-        $data['customer']['external_id'] = $this->getUserId() ? $this->getUserId() : $card->getEmail();
-        $data['customer']['type'] = $this->extractCustomerType($card->getHolderDocumentNumber());
-        $data['customer']['country'] = $card->getCountry();
-        $data['customer']['phone_numbers'] = $this->extractPhones(array($card->getPhone(), $card->getCountry()));
-        $data['customer']['documents'] = $this->extractDocuments(array($card->getHolderDocumentNumber()));
-        // TODO: Birthday ['customer']['birthday'] 
-        // TODO: allow referencing saved customer.id
+        $data['name'] = $card->getName();
+        $data['email'] = $card->getEmail();
+        $data['external_id'] = $card->getEmail();
+        $data['type'] = $this->extractCustomerType($this->getHolderDocumentNumber());
+        $data['country'] = strtolower($card->getCountry());
+        $data['phone_numbers'] = $this->extractPhones(array($card->getPhone()), $card->getCountry());
+        $data['documents'] = $this->extractDocuments(array($this->getHolderDocumentNumber()));
 
         return $data;
     }
 
-    // TODO: METHOD DOCS
+    // TODO: Comments for method (Docs)
     protected function getBillingData()
     {
         $card = $this->getCard();
-        $data = new stdClass();
+        $data = array();
         $address = $this->extractAddress($card->getBillingAddress1());  
 
-        $data['name'] = "${$card->getBillingFirstName()} ${$card->getBillingLastName()}";
-        $data['address']['country'] = $card->getBillingCountry();
-        $data['address']['state'] = $card->getBillingState();
+        $data['name'] = "{$card->getBillingFirstName()} {$card->getBillingLastName()}";
+        $data['address']['country'] = strtolower($card->getBillingCountry());
+        $data['address']['state'] = strtolower($card->getBillingState());
         $data['address']['city'] = $card->getBillingCity();
-        $data['address']['street'] = $address[0];
-        $data['address']['street_number'] = $address[1];
+        $data['address']['street'] = $address['street'];
+        $data['address']['street_number'] = $address['street_number'] ?: '00';
         $data['address']['complementary'] = $card->getBillingAddress2();
-        $data['address']['zipcode'] = $card->getBillingPostcode();
-        // TODO: neighbourhood ['address']['neighbourhood'];
+        $data['address']['zipcode'] = preg_replace('/\D/', '', $card->getBillingPostcode());
+
+        return $data;
     }
 
-    // TODO: METHOD DOCS
+    // TODO: Comments for method (Docs)
     protected function getShippingData()
     {
         $card = $this->getCard();
-        $data = new stdClass();
+        $data = array();
         $address = $this->extractAddress($card->getShippingAddress1());
         
-        $data['name'] = "${$card->getShippingFirstName()} ${$card->getShippingLastName()}";
-        $data['address']['country'] = $card->getShippingCountry();
-        $data['address']['state'] = $card->getShippingState();
+        $data['name'] = "{$card->getShippingFirstName()} {$card->getShippingLastName()}";
+        $data['address']['country'] = strtolower($card->getShippingCountry());
+        $data['address']['state'] = strtolower($card->getShippingState());
         $data['address']['city'] = $card->getShippingCity();
-        $data['address']['street'] = $address[0];
-        $data['address']['street_number'] = $address[1];
+        $data['address']['street'] = $address['street'];
+        $data['address']['street_number'] = $address['street_number'] ?: '00';
         $data['address']['complementary'] = $card->getShippingAddress2();
-        $data['address']['zipcode'] = $card->getShippingPostcode();
-        // TODO: Allow for:
-        //   "fee" ['fee'] = 1000 (in cents)
-        //   "delivery_date" ['delivery_date'] = date(YYYY-MM-DD)
-        //   "expedited" ['expedited'] = bool
-        //   "neighbourhood" ['address']['neighbourhood'];
+        $data['address']['zipcode'] = preg_replace('/\D/', '', $card->getShippingPostcode());
+        $data['fee'] = $this->getAmountInCents($this->getShippingFee());
+        // TODO: Allow for these values:
+        // ['delivery_date'] = date(YYYY-MM-DD)
+        // ['expedited'] = bool
+        return $data;
     }
 
-    // TODO: METHOD DOCS
+    // TODO: DOCS and Improve Id and Tangible Logic
     protected function getItemsData()
     {
-        return $this->getItems();
-        // returns an array of [{ id, title, unit_price, quantity e tangible }]
-        // {
-        //     "id": "r123",
-        //     "title": "Red pill",
-        //     "unit_price": 10000,
-        //     "quantity": 1,
-        //     "tangible": true
-        //   },
+        $result = array();
+
+        foreach ($this->getItems() as $lineItem) 
+        {
+            $item = array();
+            $item['id'] = $lineItem->getId() ?: "UNKNOWN_ID" ;
+            $item['title'] = $lineItem->getName();
+            $item['unit_price'] = $this->getAmountInCents($lineItem->getPrice());
+            $item['quantity'] = intval($lineItem->getQuantity());
+            $item['tangible'] = $lineItem->getTangible() ?: true;
+            array_push($result, $item);
+        }
+
+        return $result;
     }
-
-
 
     /**
      * Separate data from the credit card Address in an
@@ -382,18 +453,18 @@ abstract class AbstractRequest extends BaseAbstractRequest
      * * number
      *
      *
-     * @param array of $document_numbers
+     * @param array of $documentNumbers
      * @return array of documents
      */
-    protected function extractDocuments($document_numbers)
+    protected function extractDocuments($documentNumbers)
     {
         $result = array();
 
-        foreach ($document_numbers as $number) 
+        foreach ($documentNumbers as $number) 
         {
-            $document = new stdClass();
-            $document->number = $number;
-            $document->type = $this->extractDocumentType($number);
+            $document = array();
+            $document['number'] = $number;
+            $document['type'] = $this->extractDocumentType($number);
             array_push($result, $document);
         }
 
@@ -403,37 +474,37 @@ abstract class AbstractRequest extends BaseAbstractRequest
     /**
      * Return wether is Individual or Corporation
      *
-     * @param string $document_number
+     * @param string $documentNumber
      * @return string 'individual' | 'corporation'
      */
-    protected function extractCustomerType($document_number) 
+    protected function extractCustomerType($documentNumber) 
     {
-        return strlen($document_number) == 11 ? 'individual' : 'corporation';
+        return strlen(preg_replace('/\D/', '', $documentNumber)) == 11 ? 'individual' : 'corporation';
     }
 
     /**
      * Return wether is CPF or CNPJ
      *
-     * @param string $document_number
+     * @param string $documentNumber
      * @return string 'cpf' | 'cnpj'
      */
-    protected function extractDocumentType($document_number) 
+    protected function extractDocumentType($documentNumber) 
     {
-        return strlen($document_number) == 11 ? 'cpf' : 'cnpj';
+        return strlen(preg_replace('/\D/', '', $documentNumber)) == 11 ? 'cpf' : 'cnpj';
     }
 
     /**
      * Generate an array with the phone numbers formatted in E.164 format
      *
-     * @param array $phone_numbers
+     * @param array $phoneNumbers
      * @return array containing E.164 format numbers
      */
-    protected function extractPhones($phone_numbers, $country)
+    protected function extractPhones($phoneNumbers, $country)
     {
         $result = array();
         $phoneUtil = \libphonenumber\PhoneNumberUtil::getInstance();
 
-        foreach($phone_numbers as $number)
+        foreach($phoneNumbers as $number)
         {   
             try {
                 $number_proto = $phoneUtil->parse($number, $country);
@@ -446,5 +517,17 @@ abstract class AbstractRequest extends BaseAbstractRequest
         }
 
         return $result;
+    }
+
+
+    /**
+     * Returns object JSON representation required by Pagarme.
+     *
+     * @param int $options http://php.net/manual/en/json.constants.php
+     * @return string
+     */
+    public function toJSON($data, $options = 0)
+    {
+        return json_encode($data, $options | 64);
     }
 }

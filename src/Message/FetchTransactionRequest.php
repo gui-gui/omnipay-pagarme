@@ -55,6 +55,11 @@ class FetchTransactionRequest extends AbstractRequest
         return $this->endpoint.'transactions/'.$this->getTransactionReference();
     }
 
+    protected function createResponse($data)
+    {
+        return $this->response = new FetchTransactionResponse($this, $data);
+    }
+
     public function getHttpMethod()
     {
         return 'GET';

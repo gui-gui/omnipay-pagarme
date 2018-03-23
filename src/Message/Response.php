@@ -23,7 +23,7 @@ class Response extends AbstractResponse
         if (isset($this->data['object']) && 'transaction' === $this->data['object']) {
             return !($this->data['status'] == 'refused');
         }
-        return !isset($this->data['errors']);
+        return false;
     }
     
     /**

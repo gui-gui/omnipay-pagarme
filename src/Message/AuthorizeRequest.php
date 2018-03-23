@@ -197,15 +197,22 @@ class AuthorizeRequest extends AbstractRequest
     public function getData()
     {
         $this->validate('amount');
-        
         $data = array();
         
         $data['amount'] = $this->getAmountInteger();
         $data['payment_method'] = $this->getPaymentMethod();
-        $data['postback_url'] = $this->getPostbackUrl();
-        $data['installments'] = $this->getInstallments();
-        $data['soft_descriptor'] = $this->getSoftDescriptor();
-        $data['metadata'] = $this->getMetadata();
+        if($this->getPostbackUrl()) {
+            $data['postback_url'] = $this->getPostbackUrl();
+        }
+        if($this->getInstallments()) {
+            $data['installments'] = $this->getInstallments();
+        }
+        if($this->getMetadata()) {
+            $data['metadata'] = $this->getMetadata();
+        }
+        if($this->getSoftDescriptor()) {
+            $data['soft_descriptor'] = $this->getSoftDescriptor();
+        }
         if (!$this->getCard() && $this->getCustomer()) {
             $this->setCard($this->getCustomer());
         }
@@ -217,26 +224,19 @@ class AuthorizeRequest extends AbstractRequest
             $data['payment_method'] = $this->getPaymentMethod();
             // TODO : allow for boleto_instructions
         } else {
-            if ( $this->getCard() ) {
-                $data = array_merge($data, $this->getCardData(), $this->getCustomerData());
-            } elseif ( $this->getCardHash() ) {
-                $data['card_hash'] = $this->getCardHash();
-            } elseif( $this->getCardReference() ) {
-                $data['card_id'] = $this->getCardReference();
-            } else {
-                $this->validate('card');
-            }
-            $data['items'] = $this->getItemsData();
-            $data['billing'] = $this->getBillingData();
-            $data['shipping'] = $this->getShippingData();
+            $data = array_merge($data, $this->getCardData());
         }
+        $data['billing'] = $this->getBillingData();
+        $data['shipping'] = $this->getShippingData();
+        $data['items'] = $this->getItemsData();
         $data['capture'] = 'false';
+        $data['async'] = 'false';
         
         return $data;
     }
     
     public function getEndpoint()
-    {
+    {   
         return $this->endpoint.'transactions';
     }
 }
