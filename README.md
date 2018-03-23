@@ -11,3 +11,4 @@ TODO
 - Better docs
 - Release 1.0.0
 - Todos in abstract request
+- Tests for new api (Current tests are for forked old API version)
