@@ -8,6 +8,7 @@ Forking since there are some breaking changes between this api version and the p
 
 TODO
 
+- Test for payments without cardhash (token)
 - Better docs
 - Release 1.0.0
 - Todos in abstract request
