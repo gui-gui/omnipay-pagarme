@@ -376,7 +376,7 @@ abstract class AbstractRequest extends BaseAbstractRequest
         $data['address']['city'] = $card->getBillingCity();
         $data['address']['street'] = $address['street'];
         $data['address']['street_number'] = $address['street_number'] ?: '00';
-        $data['address']['complementary'] = $card->getBillingAddress2();
+        $data['address']['complementary'] = $card->getBillingAddress2() ?: 'Sem Complemento';
         $data['address']['zipcode'] = preg_replace('/\D/', '', $card->getBillingPostcode());
 
         return $data;
@@ -395,7 +395,7 @@ abstract class AbstractRequest extends BaseAbstractRequest
         $data['address']['city'] = $card->getShippingCity();
         $data['address']['street'] = $address['street'];
         $data['address']['street_number'] = $address['street_number'] ?: '00';
-        $data['address']['complementary'] = $card->getShippingAddress2();
+        $data['address']['complementary'] = $card->getShippingAddress2() ?: 'Sem Complemento';
         $data['address']['zipcode'] = preg_replace('/\D/', '', $card->getShippingPostcode());
         $data['fee'] = $this->getAmountInCents($this->getShippingFee());
         // TODO: Allow for these values:
