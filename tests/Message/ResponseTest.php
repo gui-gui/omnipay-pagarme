@@ -50,7 +50,7 @@ class ResponseTest extends TestCase
         $this->assertFalse($response->isRedirect());
         $this->assertSame(243844, $response->getTransactionReference());
         $this->assertSame('card_cicq9age0005h4d6d7hxx7034', $response->getCardReference());
-        $this->assertSame('acquirer', $response->getMessage());
+        $this->assertSame('Erro no processamento. Verifique os dados e tente novamente.', $response->getMessage());
     }
     
     public function testPurchaseError()

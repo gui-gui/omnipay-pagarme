@@ -153,7 +153,7 @@ class Response extends AbstractResponse
     }
 
 
-    public function getAcquirerMessage($acquirer, $code)
+    private function getAcquirerMessage($acquirer, $code)
     {
         if($acquirer == 'cielo')
         {
